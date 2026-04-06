@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>KMZ Corrector</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+    <style>
+        body {
+            font-family: Arial;
+            margin: 20px;
+        }
+
+        #map {
+            height: 500px;
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        button {
+            margin: 5px;
+            padding: 8px 12px;
+            cursor: pointer;
+        }
+
+        input {
+            margin: 5px;
+        }
+
+        #resumen {
+            background: #f3f3f3;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<h2>KMZ Corrector</h2>
+
+<label>KMZ Bueno:</label>
+<input type="file" id="bueno" accept=".KMZ"><br>
+
+<label>KMZ Malo:</label>
+<input type="file" id="malo" accept=".KMZ"><br>
+
+<label>Nombre del archivo:</label>
+<input type="text" id="nombre" placeholder="mi_kmz_corregido"><br>
+
+<button onclick="subir()">Cargar</button>
+<button onclick="corregir()">Corregir</button>
+<button onclick="descargar()">Descargar</button>
+
+<h3>Resumen</h3>
+<div id="resumen">Sin datos aún...</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="/static/script.js"></script>
+
+</body>
+</html>
