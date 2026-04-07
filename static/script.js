@@ -1,4 +1,6 @@
 let sessionId = null;
+let puntos = []; // Array para almacenar puntos editables
+let puntosMovidosManual = 0; // Contador de puntos movidos manualmente
 
 // =====================
 // 🗺️ MAPA
@@ -12,12 +14,10 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 let capaBuenos = L.layerGroup().addTo(map);
 let capaMalos = L.layerGroup().addTo(map);
 
-
 // =====================
-// 📤 SUBIR
+// 📤 SUBIR ARCHIVOS
 // =====================
 function subir() {
-
     let inputBueno = document.getElementById("bueno");
     let inputMalo = document.getElementById("malo");
 
@@ -30,6 +30,15 @@ function subir() {
     formData.append("bueno", inputBueno.files[0]);
     formData.append("malo", inputMalo.files[0]);
 
+    // Resetear contadores y puntos
+    puntosMovidosManual = 0;
+    if (puntos.length > 0) {
+        puntos.forEach(p => {
+            if (p.marker) map.removeLayer(p.marker);
+        });
+        puntos = [];
+    }
+
     fetch("/upload", {
         method: "POST",
         body: formData
@@ -39,7 +48,6 @@ function subir() {
         return res.json();
     })
     .then(data => {
-
         sessionId = data.id;
 
         capaBuenos.clearLayers();
@@ -47,23 +55,27 @@ function subir() {
 
         let bounds = [];
 
-        // 🟢 BUENOS
+        // 🟢 PUNTOS BUENOS
         data.buenos.forEach(p => {
             let marker = L.circleMarker([p[1], p[0]], {
                 radius: 5,
-                color: "black"
+                color: "green",
+                weight: 2,
+                fillColor: "green",
+                fillOpacity: 0.5
             }).addTo(capaBuenos);
-
             bounds.push([p[1], p[0]]);
         });
 
-        // 🔴 MALOS
+        // 🔴 PUNTOS MALOS (solo visualización inicial)
         data.malos.forEach(p => {
             let marker = L.circleMarker([p[1], p[0]], {
                 radius: 5,
-                color: "red"
+                color: "red",
+                weight: 2,
+                fillColor: "red",
+                fillOpacity: 0.5
             }).addTo(capaMalos);
-
             bounds.push([p[1], p[0]]);
         });
 
@@ -72,7 +84,6 @@ function subir() {
         }
 
         document.getElementById("resumen").innerHTML = "Archivos cargados. Listo para corregir.";
-
     })
     .catch(err => {
         console.error(err);
@@ -80,12 +91,10 @@ function subir() {
     });
 }
 
-
 // =====================
-// ⚙️ CORREGIR
+// ⚙️ CORREGIR PUNTOS
 // =====================
 function corregir() {
-
     if (!sessionId) {
         alert("❌ Primero carga archivos");
         return;
@@ -94,42 +103,98 @@ function corregir() {
     fetch(`/corregir/${sessionId}`)
     .then(res => res.json())
     .then(data => {
-
         capaMalos.clearLayers();
+        
+        // Limpiar markers anteriores
+        puntos.forEach(p => {
+            if (p.marker) map.removeLayer(p.marker);
+        });
+        puntos = [];
+        puntosMovidosManual = 0; // Resetear contador
 
         let corregidos = 0;
         let ignorados = 0;
 
-        data.resultado.forEach(p => {
+        data.resultado.forEach((p, index) => {
+            let lat = p.coord[1];
+            let lon = p.coord[0];
 
-            let color;
-
+            // 🟢 PUNTOS CORREGIDOS AUTOMÁTICAMENTE
             if (p.status === "corregido") {
-                color = "green";
+                L.circleMarker([lat, lon], {
+                    radius: 6,
+                    color: "green",
+                    weight: 2,
+                    fillColor: "lightgreen",
+                    fillOpacity: 0.7
+                }).addTo(capaMalos);
                 corregidos++;
-            } else {
-                color = "red";
+            }
+            // 🔴 PUNTOS NO CORREGIDOS (EDITABLES)
+            else {
+                let circle = L.circleMarker([lat, lon], {
+                    radius: 6,
+                    color: "red",
+                    weight: 2,
+                    fillColor: "red",
+                    fillOpacity: 0.7
+                }).addTo(map);
+                
+                // Variables para arrastre
+                let isDragging = false;
+                
+                circle.on('mousedown', function() {
+                    isDragging = true;
+                    map.dragging.disable();
+                });
+                
+                map.on('mousemove', function(e) {
+                    if (isDragging) {
+                        circle.setLatLng(e.latlng);
+                    }
+                });
+                
+                map.on('mouseup', function(e) {
+                    if (isDragging) {
+                        isDragging = false;
+                        map.dragging.enable();
+                        
+                        // Actualizar coordenadas
+                        let newPos = circle.getLatLng();
+                        let punto = puntos.find(x => x.marker === circle);
+                        if (punto) {
+                            punto.coord = [newPos.lng, newPos.lat];
+                            guardarCambios();
+                        }
+                    }
+                });
+                
+                circle.bindPopup("🔴 Arrástrame (mantén clic)");
+                
+                puntos.push({
+                    index: index,
+                    marker: circle,
+                    coord: [lon, lat],
+                    originalCoord: [lon, lat],
+                    fueMovido: false
+                });
+                
                 ignorados++;
             }
-
-            L.circleMarker([p.coord[1], p.coord[0]], {
-                radius: 6,
-                color: color
-            }).addTo(capaMalos);
         });
 
         let total = corregidos + ignorados;
-        let porcentaje = ((corregidos / total) * 100).toFixed(1);
+        let porcentaje = total > 0 ? ((corregidos / total) * 100).toFixed(1) : 0;
 
         document.getElementById("resumen").innerHTML = `
             <b>Total puntos:</b> ${total} <br>
-            <b>Corregidos:</b> ${corregidos} 🟢 <br>
-            <b>No corregidos:</b> ${ignorados} 🔴 <br>
-            <b>% Corrección:</b> ${porcentaje}%
+            <b>Corregidos automáticos:</b> ${corregidos} 🟢 <br>
+            <b>No corregidos (editables):</b> ${ignorados} 🔴 <br>
+            <b>% Corrección:</b> ${porcentaje}% <br>
+            <b>✏️ Puntos movidos manualmente:</b> ${puntosMovidosManual} 🔵
         `;
 
-        alert("✅ Corrección aplicada");
-
+        alert("✅ Ahora puedes mover los puntos rojos (mantén clic y arrastra)");
     })
     .catch(err => {
         console.error(err);
@@ -137,18 +202,90 @@ function corregir() {
     });
 }
 
+// =====================
+// 💾 GUARDAR CAMBIOS
+// =====================
+function guardarCambios() {
+    if (!sessionId || puntos.length === 0) {
+        return;
+    }
+
+    let datosParaServidor = puntos.map(p => ({
+        index: p.index,
+        coord: p.coord
+    }));
+
+    // Contar puntos movidos manualmente
+    let movidos = 0;
+    puntos.forEach(punto => {
+        if (!punto.originalCoord) {
+            punto.originalCoord = [...punto.coord];
+        } else if (punto.coord[0] !== punto.originalCoord[0] || 
+                   punto.coord[1] !== punto.originalCoord[1]) {
+            if (!punto.fueMovido) {
+                punto.fueMovido = true;
+                puntosMovidosManual++;
+                movidos++;
+            }
+        }
+    });
+    
+    if (movidos > 0) {
+        actualizarResumenManual();
+    }
+
+    fetch(`/guardarCambios/${sessionId}`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify(datosParaServidor)
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (movidos > 0) {
+            console.log(`✅ ${movidos} punto(s) movido(s) manualmente`);
+        }
+    })
+    .catch(err => {
+        console.error("Error guardando:", err);
+        alert("❌ Error al guardar cambios");
+    });
+}
 
 // =====================
-// 💾 DESCARGAR
+// 📊 ACTUALIZAR RESUMEN
+// =====================
+function actualizarResumenManual() {
+    let resumenDiv = document.getElementById("resumen");
+    let contenidoActual = resumenDiv.innerHTML;
+    
+    // Buscar si ya existe la línea de movimientos manuales
+    if (contenidoActual.includes("Puntos movidos manualmente:")) {
+        // Reemplazar la línea existente
+        let lines = contenidoActual.split('<br>');
+        for (let i = 0; i < lines.length; i++) {
+            if (lines[i].includes("Puntos movidos manualmente:")) {
+                lines[i] = `<b>✏️ Puntos movidos manualmente:</b> ${puntosMovidosManual} 🔵`;
+                break;
+            }
+        }
+        resumenDiv.innerHTML = lines.join('<br>');
+    } else {
+        // Agregar nueva línea
+        resumenDiv.innerHTML = contenidoActual + `<br><b>✏️ Puntos movidos manualmente:</b> ${puntosMovidosManual} 🔵`;
+    }
+}
+
+// =====================
+// 💾 DESCARGAR KMZ
 // =====================
 function descargar() {
-
     if (!sessionId) {
         alert("❌ Primero carga y corrige");
         return;
     }
 
     let nombre = document.getElementById("nombre").value || "corregido";
-
     window.location = `/descargar/${sessionId}?nombre=${nombre}`;
 }

@@ -200,6 +200,30 @@ def descargar(id_sesion):
     return send_file(path, as_attachment=True, download_name=nombre)
 
 
+@app.route("/guardarCambios/<id_sesion>", methods=["POST"])
+def guardarCambios(id_sesion):
+
+    data = request.json
+    root = data_store[id_sesion]["root"]
+    puntos_malos = data_store[id_sesion]["puntos_malos"]
+
+    for item in data:
+        idx = item["index"]  # 🔥 clave
+        lon, lat = item["coord"]
+
+        pm = puntos_malos[idx][0]
+
+        nodo = pm.find('.//{http://www.opengis.net/kml/2.2}coordinates')
+        nodo.text = f"{lon},{lat},0"
+        
+    salida = os.path.join(OUTPUT_FOLDER, id_sesion + ".kmz")
+    guardar_kmz(root, salida)
+    data_store[id_sesion]["salida"]= salida
+
+    print("Guardando y Regenerado:", data)
+    return jsonify({"status": "ok"})
+
+
 # ----------- RUN -----------
 
 if __name__ == "__main__":
